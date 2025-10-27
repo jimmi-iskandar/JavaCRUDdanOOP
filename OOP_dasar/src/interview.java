@@ -1,4 +1,3 @@
-import java.text.DecimalFormat;
 import java.util.Scanner;
 
 
@@ -9,17 +8,12 @@ public class interview {
 
     
     public static void main(String[] args) {
-     db_config k = new db_config();
-     DecimalFormat df = new DecimalFormat("#,###");
+     function k = new function();
+     
 
-     k.koneksi();
+     
+     k.Tampilkan_Data();
      while (true) {
-        //  System.out.println("Client Name : " + k.CLIENT );
-        //  System.out.println("KONTRAK NO : " + k.KONTRAK_NO);
-        //  System.out.println("OTR : Rp."+ df.format(k.OTR));
-        //  System.out.println(" DP : " + df.format(k.OTR*k.DP) );
-
-         k.Tampilkan_Data();
         System.out.println("1 . Hitung");
         System.out.println("2 . Tampilkan Total Angsuran ");
         System.err.println("3 . Denda");
