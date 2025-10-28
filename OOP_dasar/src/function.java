@@ -24,103 +24,133 @@ public class function {
                 bunga = 0.14;
                 PerhitunganBulanan();
             }else if (LamaCicilan>24){
-                bunga = 0.16;
+                bunga = 0.165;
                 PerhitunganBulanan();
             }
            
     
 }
-    public void PerhitunganBulanan(){
-        String kontrakNo = KONTRAK_NO;
+    public void PerhitunganBulanan() {
+    String kontrakNo = KONTRAK_NO;
 
+    try {
+        // Ambil data kontrak
+        // Update bunga (jika ingin sinkronisasi)
+        String sqlUpdateBunga = "UPDATE kontrak SET bunga = ?,dp = ?,otr=?,jangka_waktu = ? WHERE kontrak_no = ?";
+        PreparedStatement psUpdateBunga = conn.prepareStatement(sqlUpdateBunga);
+        psUpdateBunga.setDouble(1, bunga);
+        psUpdateBunga.setDouble(2, DP);
+        psUpdateBunga.setDouble(3, OTR);
+        psUpdateBunga.setDouble(4, LamaCicilan);
+        psUpdateBunga.setString(5, KONTRAK_NO);
+        psUpdateBunga.executeUpdate();
+        psUpdateBunga.close();
 
-        try {
-             // Ambil data kontrak
-            String sqlKontrak = "SELECT * FROM kontrak WHERE kontrak_no = ?";
-            PreparedStatement psKontrak = conn.prepareStatement(sqlKontrak);
-            psKontrak.setString(1, kontrakNo);
-            ResultSet rs = psKontrak.executeQuery();
+        String sqlKontrak = "SELECT * FROM kontrak WHERE kontrak_no = ?";
+        PreparedStatement psKontrak = conn.prepareStatement(sqlKontrak);
+        psKontrak.setString(1, kontrakNo);
+        ResultSet rs = psKontrak.executeQuery();
 
-            //update database bunga
-            String sqlUpdateBunga = "UPDATE kontrak SET bunga = ? WHERE kontrak_no = ?";
-            PreparedStatement psUpdateBunga = conn.prepareStatement(sqlUpdateBunga);
-            psUpdateBunga.setDouble(1, bunga);
-            psUpdateBunga.setString(2, KONTRAK_NO);
-            psUpdateBunga.executeUpdate();
-            if (rs.next()) {
-                    String clientName = rs.getString("client_name");
-                    double otr = rs.getDouble("otr");
-                    double dpPersen = rs.getDouble("dp");
-                    int jangkaWaktu = rs.getInt("jangka_waktu");
-                    double bungaPersen = rs.getDouble("bunga");
+        if (rs.next()) {
+            String clientName = rs.getString("client_name");
+            double otr = rs.getDouble("otr");
+            double dpPersen = rs.getDouble("dp");
+            int jangkaWaktu = rs.getInt("jangka_waktu");
+            double bungaPersen = rs.getDouble("bunga");
+            // Hitung total pinjaman dan bunga
+            double dp = otr * dpPersen;
+            double pokokutang = otr - dp;
+            double totalBunga = pokokutang * bungaPersen;
+            double totalPembayaran = pokokutang + totalBunga;
+            double angsuranBulanan = totalPembayaran / jangkaWaktu;
+            System.out.println(df.format(dp));
 
-                    // Hitung total pinjaman dan bunga
-                    double dp = otr * dpPersen;
-                    double pokokutang = otr - dp;
-                    double totalBunga = pokokutang * bungaPersen;
-                    double totalPembayaran = pokokutang + totalBunga;
-                    double angsuranBulanan = totalPembayaran / jangkaWaktu;
-                    // Siapkan query UPDATE
-                   
-                    String sqlUpdate = "UPDATE jadwal_angsuran SET angsuran_per_bulan = ?, tanggal_jatuh_tempo = ? WHERE kontrak_no = ? AND angsuran_ke = ?";
-                    PreparedStatement psUpdate = conn.prepareStatement(sqlUpdate);
+            // Hapus data angsuran yang melebihi jangka waktu baru
+            String sqlDeleteLebih = "DELETE FROM jadwal_angsuran WHERE kontrak_no = ? AND angsuran_ke > ?";
+            PreparedStatement psDelete = conn.prepareStatement(sqlDeleteLebih);
+            psDelete.setString(1, kontrakNo);
+            psDelete.setInt(2, LamaCicilan);
+            psDelete.executeUpdate();
+            psDelete.close();
 
-                    LocalDate tanggalJatuhTempo = LocalDate.of(2024, 1, 25);
+            // Update atau insert jadwal sesuai jangka waktu
+            String sqlUpdate = "UPDATE jadwal_angsuran SET angsuran_per_bulan = ?, tanggal_jatuh_tempo = ? " +
+                               "WHERE kontrak_no = ? AND angsuran_ke = ?";
+            PreparedStatement psUpdate = conn.prepareStatement(sqlUpdate);
 
-                    for (int i = 1; i <= jangkaWaktu; i++) {
-                        psUpdate.setDouble(1, angsuranBulanan);
-                        psUpdate.setDate(2, java.sql.Date.valueOf(tanggalJatuhTempo));
-                        psUpdate.setString(3, kontrakNo);
-                        psUpdate.setInt(4, i);
+            LocalDate tanggalJatuhTempo = LocalDate.of(2024, 1, 25);
 
-                        int rows = psUpdate.executeUpdate();
+            for (int i = 1; i <= LamaCicilan; i++) {
+                psUpdate.setDouble(1, angsuranBulanan);
+                psUpdate.setDate(2, java.sql.Date.valueOf(tanggalJatuhTempo));
+                psUpdate.setString(3, kontrakNo);
+                psUpdate.setInt(4, i);
 
-                        // Jika data belum ada, tambahkan
-                        if (rows == 0) {
-                            String sqlInsert = "INSERT INTO jadwal_angsuran (kontrak_no, angsuran_ke, angsuran_per_bulan, tanggal_jatuh_tempo) VALUES (?, ?, ?, ?)";
-                            PreparedStatement psInsert = conn.prepareStatement(sqlInsert);
-                            psInsert.setString(1, kontrakNo);
-                            psInsert.setInt(2, i);
-                            psInsert.setDouble(3, angsuranBulanan);
-                            psInsert.setDate(4, java.sql.Date.valueOf(tanggalJatuhTempo));
-                            psInsert.executeUpdate();
-                        }
+                int rows = psUpdate.executeUpdate();
 
-                        tanggalJatuhTempo = tanggalJatuhTempo.plusMonths(1);
-                    }
-
-                    System.out.println("Data jadwal angsuran berhasil diperbarui!");
-                } else {
-                    System.out.println("Kontrak dengan nomor " + kontrakNo + " tidak ditemukan!");
+                // Jika data belum ada, tambahkan
+                if (rows == 0) {
+                    String sqlInsert = "INSERT INTO jadwal_angsuran (kontrak_no, angsuran_ke, angsuran_per_bulan, tanggal_jatuh_tempo) " +
+                                       "VALUES (?, ?, ?, ?)";
+                    PreparedStatement psInsert = conn.prepareStatement(sqlInsert);
+                    psInsert.setString(1, kontrakNo);
+                    psInsert.setInt(2, i);
+                    psInsert.setDouble(3, angsuranBulanan);
+                    psInsert.setDate(4, java.sql.Date.valueOf(tanggalJatuhTempo));
+                    psInsert.executeUpdate();
+                    psInsert.close();
                 }
-                rs.close();
-                psKontrak.close();
-                psUpdateBunga.close();
-                String Sqltampilangsuran ="SELECT * FROM JADWAL_ANGSURAN";
-                PreparedStatement psTampilAngsuran = conn.prepareStatement(Sqltampilangsuran);
-                ResultSet rstampil = psTampilAngsuran.executeQuery();
-                System.out.println("KONTRAK_NO\t|ANGSURAN_KE\tANGSURAN_PERBULAN\tTANGGAL_JATUH_TEMPO");
-                while (rstampil.next()) {
-                    System.out.println(rstampil.getString("kontrak_no")+"\t|"+rstampil.getInt("angsuran_ke")+"\t\t|"+df.format(rstampil.getDouble("angsuran_per_bulan"))+"\t\t|"+rstampil.getDate("tanggal_jatuh_tempo")+"|");
-                }
-               
-        } catch (SQLException e) {
-            System.out.println("gagal Tampil : "+e.getMessage());
-            e.getStackTrace();
+
+                tanggalJatuhTempo = tanggalJatuhTempo.plusMonths(1);
+            }
+
+            psUpdate.close();
+
+            System.out.println("Jadwal angsuran berhasil diperbarui sesuai jangka waktu!");
+
+            // Tampilkan hasil
+            String Sqltampilangsuran = "SELECT * FROM jadwal_angsuran WHERE kontrak_no = ? ORDER BY angsuran_ke";
+            PreparedStatement psTampilAngsuran = conn.prepareStatement(Sqltampilangsuran);
+            psTampilAngsuran.setString(1, kontrakNo);
+            ResultSet rstampil = psTampilAngsuran.executeQuery();
+
+            System.out.println("---------------------------------------------------------------------------------");
+            System.out.println("|KONTRAK_NO\t|ANGSURAN_KE\t|ANGSURAN_PERBULAN\t|TANGGAL_JATUH_TEMPO\t|");
+            System.out.println("---------------------------------------------------------------------------------");
+            while (rstampil.next()) {
+                System.out.println("|" + rstampil.getString("kontrak_no") + "\t|"
+                        + rstampil.getInt("angsuran_ke") + "\t\t|"
+                        + df.format(rstampil.getDouble("angsuran_per_bulan")) + "\t\t|"
+                        + rstampil.getDate("tanggal_jatuh_tempo") + "\t|");
+            }
+            System.out.println("---------------------------------------------------------------------------------");
+
+            psTampilAngsuran.close();
+            rstampil.close();
+        } else {
+            System.out.println("Kontrak dengan nomor " + kontrakNo + " tidak ditemukan!");
         }
+
+        rs.close();
+        psKontrak.close();
+
+    } catch (SQLException e) {
+        System.out.println("Gagal Perhitungan: " + e.getMessage());
     }
+}
+
    
     public void TampilkanTotalAngsuran() {
         try {
             
             
-            String sql = "SELECT k.client_name, j.kontrak_no, " +
-                         "SUM(j.angsuran_per_bulan) AS total_angsuran_jatuh_tempo " +
-                         "FROM jadwal_angsuran j " +
-                         "JOIN kontrak k ON j.kontrak_no = k.kontrak_no " +
-                         "WHERE j.tanggal_jatuh_tempo <= ? " +
-                         "AND k.client_name = ? " +
-                         "GROUP BY j.kontrak_no, k.client_name";
+            String sql = """
+            SELECT k.client_name, j.kontrak_no,
+            SUM(j.angsuran_per_bulan) AS total_angsuran_jatuh_tempo 
+            FROM jadwal_angsuran j JOIN kontrak k ON j.kontrak_no = k.kontrak_no 
+            WHERE j.tanggal_jatuh_tempo <= ? AND k.client_name = ? 
+            GROUP BY j.kontrak_no, k.client_name
+            """;
             
             PreparedStatement ps = conn.prepareStatement(sql);
             ps.setString(1, "2024-08-14");
@@ -128,19 +158,23 @@ public class function {
             
             ResultSet rs = ps.executeQuery();
             
-            System.out.println("KONTRAK_NO\t|CLIENT_NAME\t|TOTAL_ANGSURAN_JATUH_TEMPO");
-            System.out.println("------------------------------------------------------------");
+            System.out.println("-----------------------------------------------------------------");
+            System.out.println("|KONTRAK_NO\t|CLIENT_NAME\t|TOTAL_ANGSURAN_JATUH_TEMPO\t|");
+            System.out.println("-----------------------------------------------------------------");
             
             if (rs.next()) {
                 
-                System.out.println( rs.getString("kontrak_no")+ "\t| " + rs.getString("client_name") + "\t\t| " + df.format(rs.getDouble("total_angsuran_jatuh_tempo")));
+                System.out.println( "|"+rs.getString("kontrak_no")+ "\t| " 
+                        + rs.getString("client_name") 
+                        + "\t\t| " + df.format(rs.getDouble("total_angsuran_jatuh_tempo"))
+                        +"\t\t\t|");
             } else {
                 System.out.println("Tidak ada angsuran jatuh tempo untuk client tersebut.");
             }
+            System.out.println("-----------------------------------------------------------------");
             
             rs.close();
-            ps.close();
-            
+            ps.close(); 
             
         } catch (SQLException e) {
             System.out.println("Kesalahan SQL: " + e.getMessage());
@@ -163,22 +197,22 @@ public class function {
 
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
-
-            System.out.printf("%-12s %-10s %-15s %-20s %-15s%n", 
-                "KONTRAK_NO", "CLIENT", "ANGSURAN_KE", "HARI_KETERLAMBATAN", "TOTAL_DENDA");
-            System.out.println("--------------------------------------------------------------------------");
+                 
+                System.out.println("----------------------------------------------------------------------------------------");
+                System.out.println("|KONTRAK_NO\t|CLIENT_NAME\t|INSTALLMENT_NO\t|HARI_KETERLAMBATAN\t|TOTAL_DENDA\t|");
+                System.out.println("----------------------------------------------------------------------------------------");
 
             while (rs.next()) {
-                String kontrak = rs.getString("KONTRAK_NO");
-                String client = rs.getString("CLIENT_NAME");
-                int angsuranKe = rs.getInt("INSTALLMENT_NO");
-                int hariTelat = rs.getInt("HARI_KETERLAMBATAN");
-                double totalDenda = rs.getDouble("TOTAL_DENDA");
-
-                System.out.printf("%-12s %-10s %-15d %-20d Rp %-15.2f%n",
-                    kontrak, client, angsuranKe, hariTelat, totalDenda);
+                System.out.println("|"+rs.getString("KONTRAK_NO")
+                        +"\t|"+rs.getString("CLIENT_NAME")+"\t\t|"
+                        +rs.getInt("INSTALLMENT_NO")+"\t\t|"+rs.getInt("HARI_KETERLAMBATAN")
+                        +"\t\t\t|"+df.format(rs.getDouble("TOTAL_DENDA"))
+                        +"\t|");
+                
             }
-
+                System.out.println("----------------------------------------------------------------------------------------");
+            rs.close();
+            ps.close();
         } catch (Exception e) {
             System.out.println("Terjadi kesalahan saat mengambil data: " + e.getMessage());
         }
@@ -186,15 +220,20 @@ public class function {
     public void Tampilkan_Data() {
         this.conn = db_config.koneksi();
         String sql = "SELECT * FROM KONTRAK";
-        System.out.println("-----------------------------------------------");
-        System.out.println("Kontrak No\t|Client_Name\t|OTR");
-        System.out.println("-----------------------------------------------");
+        System.out.println("-------------------------------------------------");
+        System.out.println("|Kontrak No\t|Client_Name\t|OTR\t\t|");
+        System.out.println("-------------------------------------------------");
         try(Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sql)){
         while (rs.next()) {
-            System.out.println(rs.getString("kontrak_no")+"\t|"+rs.getString("client_name")+"\t\t|"+df.format(rs.getDouble("otr")));
+            System.out.println("|"+rs.getString("kontrak_no")
+                    +"\t|"+rs.getString("client_name")
+                    +"\t\t|"+df.format(rs.getDouble("otr"))
+                    +"\t|");
             
         }
-        System.out.println("----------------------------------------------");
+        System.out.println("-------------------------------------------------");
+        st.close();
+        rs.close();
        } catch (SQLException e) {
         System.out.println("gagal Tampil data : "+ e.getMessage());
        }
